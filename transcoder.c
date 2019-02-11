@@ -140,23 +140,25 @@ ssize_t encode_oid(const snmp_oid_t *data, uint8_t *res) {
     return res_tmp - res;
 }
 
-ssize_t encode_string(const char *data, size_t size, uint8_t *res) {
+ssize_t encode_string(const char *data, uint8_t *res) {
+    size_t size = strlen(data) * sizeof(*data);
     memmove(res, data, size);
     return size;
 }
 
-ssize_t encode_int(int data, uint8_t *res) {
+ssize_t encode_int(const int *data, uint8_t *res) {
+    const int val = *data;
     uint8_t *res_tmp = res;
     size_t len = calc_encoded_int_len(data);
 
     while (len--) {
-        *res_tmp++ = (uint8_t)((data >> (8 * len)) & 0xFF);
+        *res_tmp++ = (uint8_t)((val >> (8 * len)) & 0xFF);
     }
 
     return res_tmp - res;
 }
 
-ssize_t encode_content_length(size_t data, uint8_t *res) {
+ssize_t encode_content_length(const uint16_t *data, uint8_t *res) {
     size_t len = calc_encoded_content_length(data);
     uint8_t *res_tmp = res;
 
@@ -164,10 +166,10 @@ ssize_t encode_content_length(size_t data, uint8_t *res) {
         len--;
         *res_tmp++ = 0x80 + len;
         while (len--) {
-            *res_tmp++ = (data >> (8 * len)) & 0xFF;
+            *res_tmp++ = (*data >> (8 * len)) & 0xFF;
         }
     } else {
-        *res_tmp++ = (uint8_t)data;
+        *res_tmp++ = (uint8_t)*data;
     }
 
     return res_tmp - res;
@@ -198,20 +200,20 @@ uint16_t calc_encoded_oid_len(const snmp_oid_t *data) {
 }
 
 uint16_t calc_encoded_string_len(const char *data) {
-    return strlen(data) * sizeof(char);
+    return (uint16_t)(strlen(data) * sizeof(char));
 }
 
-uint16_t calc_encoded_int_len(int data) {
-    return (data & (0xFF << 24)) ? 4
-        : (data & (0xFF << 16)) ? 3
-        : (data & (0xFF << 8)) ? 2
-        : 1;
+uint16_t calc_encoded_int_len(const int *data) {
+    return (*data & (0xFF << 24)) ? (uint16_t)4
+        : (*data & (0xFF << 16)) ? (uint16_t)3
+        : (*data & (0xFF << 8)) ? (uint16_t)2
+        : (uint16_t)1;
 }
 
-uint16_t calc_encoded_content_length(uint16_t data) {
-    return data > 127
-        ? calc_encoded_int_len(data) + 1
-        : 1;
+uint16_t calc_encoded_content_length(const uint16_t *data) {
+    return (uint16_t) ((*data > 127)
+        ? calc_encoded_int_len((const int *)data) + 1
+        : 1);
 }
 
 

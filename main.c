@@ -17,23 +17,38 @@ uint8_t request_message[] = {
 
 
 #include "snmp.h"
+#include "snmp_types.h"
+#include "snmp_mib.h"
 
 
-int get_string(void **res, size_t *size) {
-    *res = strdup("hello world!!!");
+int get_string(void **res, size_t *size, bool *is_allocated) {
+    *res = "hello world!!!";
     *size = sizeof("hello world!!!");
+    *is_allocated = false;
 }
 
-int get_int(void **res, size_t *size) {
+int get_int(void **res, size_t *size, bool *is_allocated) {
     static const int val = 19922;
-    *res = &val;
+    *res = (void *)&val;
     *size = sizeof(val);
+    *is_allocated = false;
 }
 
 
 int main() {
-    uint8_t *response;
+    ssize_t resp_size;
+    snmp_oid_t oid1 = {
+            .subids = { 1, 3, 14, 3, 4, 26 },
+            .subids_cnt = 6
+    }, oid2 = {
+            .subids = { 1, 3, 14, 34334, 2, 26 },
+            .subids_cnt = 6
+    };
 
-    process_snmp(request_message, sizeof(request_message), &response);
+    add_mib_entry(&oid1, SNMP_OBJECT_TYPE_OCTET_STRING, get_string, NULL);
+    add_mib_entry(&oid2, SNMP_OBJECT_TYPE_INTEGER, get_int, NULL);
+
+    uint8_t *response;
+    resp_size = process_snmp(request_message, sizeof(request_message), &response);
 }
 

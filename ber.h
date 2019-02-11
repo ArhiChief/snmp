@@ -22,7 +22,8 @@ struct asn1_tree_node {
 
 
     asn1_tree_node_t *root;             // pointer to root element
-    int type;                           // node type
+    snmp_object_type_t type;            // node type
+
     uint16_t full_size;                 // size of node in bytes include tag, length and content octets after encoding
 
     union {
@@ -42,6 +43,16 @@ ssize_t decode_ber(const uint8_t *data, size_t data_size, asn1_tree_node_t *root
 ssize_t encode_ber(asn1_tree_node_t *root, uint8_t **buffer);
 
 int traverse_tree(asn1_tree_node_t *root, void *user_data, int (*clbk)(void *user_data, asn1_tree_node_t *node));
+
+asn1_tree_node_t *create_node(asn1_tree_node_t *root, snmp_object_type_t type, const void *data, uint16_t size,
+        bool is_allocated);
+
+int add_node(asn1_tree_node_t *root, asn1_tree_node_t *node);
+
+asn1_tree_node_t *copy_primitive(const asn1_tree_node_t *base);
+
+
+
 void free_asn1_tree(asn1_tree_node_t *root);
 
 #endif //SNMP_BER_H

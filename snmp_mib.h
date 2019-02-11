@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include "snmp_types.h"
 
-typedef int (*getter_t)(void **res, size_t *size);
+typedef int (*getter_t)(void **value, size_t *size, bool *is_allocated);
 typedef int (*setter_t)(const void *res, size_t size);
 
 typedef struct mib_entry {

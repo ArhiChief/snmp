@@ -137,7 +137,7 @@ static int encode_node(void *user_data, asn1_tree_node_t *node) {
     else if (node->full_size < 512)
         content_length = node->full_size - 4; // TAG + 0x82 + 2 bytes of content length
 
-    if ((bytes_wrote = encode_content_length(content_length, buf + shift)) < 0)
+    if ((bytes_wrote = encode_content_length(&content_length, buf + shift)) < 0)
         return -1;
     shift += bytes_wrote;
 
@@ -169,7 +169,7 @@ static uint16_t calc_full_sizes(asn1_tree_node_t *node) {
         full_size = node->content.p.size;
     }
 
-    full_size = 1 + calc_encoded_content_length(full_size) + full_size;
+    full_size = 1 + calc_encoded_content_length(&full_size) + full_size;
     node->full_size = full_size;
 
     return full_size;
@@ -196,37 +196,97 @@ ssize_t encode_ber(asn1_tree_node_t *root, uint8_t **buffer) {
     return ed.shift;
 }
 
-
-int add_primitive_child(asn1_tree_node_t *root, int type, void *data, size_t size, bool is_allocated) {
+asn1_tree_node_t *create_node(asn1_tree_node_t *root, snmp_object_type_t type, const void *data,
+                              uint16_t size, bool is_allocated) {
+    asn1_tree_node_t *result;
     asn1_tree_node_t **items;
-    asn1_tree_node_t *new_child;
 
-    if (NULL == root || is_constructed(type) || !is_constructed(root->type)) {
+    if (NULL == (result = calloc(1, sizeof(*result)))) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    if (NULL != root) {
+        if (is_constructed(root->type)) {
+            items = realloc(root->content.c.items, (root->content.c.items_num + 1) * sizeof(*root->content.c.items));
+
+            if (NULL == items) {
+                errno = ENOMEM;
+                goto fail;
+            }
+
+            items[root->content.c.items_num++] = result;
+            root->content.c.items = items;
+        } else {
+            errno = EINVAL;
+            goto fail;
+        }
+    }
+
+    if (!is_constructed(type)) {
+        result->content.p.size = size;
+        result->content.p.data = data;
+        result->content.p.is_allocated = is_allocated;
+    }
+
+    result->type = type;
+    result->root = root;
+
+    return result;
+
+fail:
+    free(result);
+    return NULL;
+}
+
+int add_node(asn1_tree_node_t *root, asn1_tree_node_t *node) {
+    asn1_tree_node_t **items;
+
+    if (NULL == root || !is_constructed(root->type) || NULL == node) {
         errno = EINVAL;
         return -1;
     }
 
-    items = root->content.c.items;
-    items = realloc(items, (root->content.c.items_num + 1) * sizeof(*items));
+    items = realloc(root->content.c.items, (root->content.c.items_num + 1) * sizeof(*root->content.c.items));
+
     if (NULL == items) {
         errno = ENOMEM;
         return -1;
     }
 
-    new_child = calloc(1, sizeof(*new_child));
-    if (NULL == new_child) {
-        errno = ENOMEM;
-        return -1;
-    }
+    items[root->content.c.items_num++] = node;
+    node->root = root;
 
-    items[root->content.c.items_num++] = new_child;
     root->content.c.items = items;
 
-    new_child->root = root;
-    new_child->type = type;
-    new_child->content.p.is_allocated = is_allocated;
-    new_child->content.p.data = data;
-    new_child->content.p.size = size;
-
     return 0;
+}
+
+asn1_tree_node_t *copy_primitive(const asn1_tree_node_t *base) {
+    asn1_tree_node_t *result;
+    size_t data_size = base->content.p.size;
+
+    if (is_constructed(base->type)){
+        errno = EINVAL;
+        return NULL;
+    }
+
+    if (NULL == (result = calloc(1, sizeof(*result)))) {
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    result->type = base->type;
+    result->content.p.size = data_size;
+
+    if (NULL == (result->content.p.data = malloc(data_size))) {
+        free(result);
+        errno = ENOMEM;
+        return NULL;
+    }
+
+    result->content.p.is_allocated = true;
+    memmove((void *)result->content.p.data, base->content.p.data, data_size);
+
+    return result;
 }

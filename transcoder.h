@@ -18,14 +18,15 @@ ssize_t decode_content_length(const uint8_t *data, uint16_t *res);
 
 
 ssize_t encode_oid(const snmp_oid_t *data, uint8_t *res);
-ssize_t encode_string(const char *data, size_t size, uint8_t *res);
-ssize_t encode_int(int data, uint8_t *res);
-ssize_t encode_content_length(size_t data, uint8_t *res);
+ssize_t encode_string(const char *data, uint8_t *res);
+ssize_t encode_int(const int *data, uint8_t *res);
+ssize_t encode_content_length(const uint16_t *data, uint8_t *res);
 
 uint16_t calc_encoded_oid_len(const snmp_oid_t *data);
 uint16_t calc_encoded_string_len(const char *data);
-uint16_t calc_encoded_int_len(int data);
-uint16_t calc_encoded_content_length(uint16_t data);
+uint16_t calc_encoded_int_len(const int *data);
+
+uint16_t calc_encoded_content_length(const uint16_t *data);
 
 void string_to_oid(const char *val, snmp_oid_t *res);
 char *oid_to_string(const snmp_oid_t *oid);

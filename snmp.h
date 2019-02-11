@@ -8,6 +8,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-ssize_t process_snmp(const uint8_t *request, size_t req_size, uint8_t **response);
+ssize_t process_snmp(const uint8_t *req_packet, size_t req_size, uint8_t **resp_packet);
 
 #endif //SNMP_SNMP_H
