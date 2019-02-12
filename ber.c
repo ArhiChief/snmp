@@ -1,62 +1,74 @@
-//
-// Created by arhichief on 2/6/19.
-//
-
 #include <stdio.h>
 #include <errno.h>
 #include <memory.h>
-#include "transcoder.h"
-#include "ber.h"
 
+#include "ber.h"
 #include "utilities.h"
 
 
-static  int id;
 
-static ssize_t decode(const uint8_t *data, size_t size, asn1_tree_node_t *root);
+typedef struct encoding_data {
+    uint8_t *buffer;
+    size_t shift;
+} encoding_data_t;
 
-int traverse_tree(asn1_tree_node_t *root, void *user_data, int (*clbk)(void *user_data, asn1_tree_node_t *node)) {
-    int res = 0;
-    size_t i = 0;
-    asn1_tree_node_t *node = NULL;
 
-    if (res = clbk(user_data, root)) return res;
+static int encode_node(void *user_data, asn1_tree_node_t *node) {
+    encoding_data_t *ed = (encoding_data_t *)user_data;
+    uint8_t *buf = ed->buffer;
+    ssize_t bytes_wrote;
+    size_t shift = ed->shift;
+    size_t content_length;
 
-    if (is_constructed(root->type)) {
-        for (i = 0; i < root->content.c.items_num; ++i) {
-            node = root->content.c.items[i];
-            if (res = traverse_tree(node, user_data, clbk)) return res;
-        }
+    buf[shift++] = (uint8_t)node->type;
+
+    if (node->full_size < 127)
+        content_length = node->full_size - 2; // TAG + 1 byte of content length
+    else if (node->full_size < 255)
+        content_length = node->full_size - 3; // TAG + 0x81 + 1 byte of content length
+    else if (node->full_size < 512)
+        content_length = node->full_size - 4; // TAG + 0x82 + 2 bytes of content length
+
+    if ((bytes_wrote = ber_encode_length(&content_length, buf + shift)) < 0)
+        return -1;
+    shift += (size_t)bytes_wrote;
+
+    if (!ber_is_constructed_type(node->type)) {
+        memmove(buf + shift, node->content.p.data, node->content.p.size);
+        shift += node->content.p.size;
     }
 
+    ed->shift = shift;
 
     return 0;
 }
 
-ssize_t decode_ber(const uint8_t *data, size_t size, asn1_tree_node_t *root) {
-    id = 1;
-    decode(data, size, root);
+static int set_zero_full_size(__attribute__((unused)) void *_, asn1_tree_node_t *node) {
+    node->full_size = 0;
+    return 0;
 }
 
-void free_asn1_tree(asn1_tree_node_t *root) {
-    int i;
-    asn1_tree_node_t *node;
+static size_t calc_full_sizes(asn1_tree_node_t *node) {
+    size_t i;
+    size_t full_size = 0;
 
-    if (is_constructed(root->type)) {
-        for (i = 0; i < root->content.c.items_num; ++i) {
-            node = root->content.c.items[i];
-            free_asn1_tree(node);
+    if (ber_is_constructed_type(node->type)) {
+        for (i = 0; i < node->content.c.items_num; i++) {
+            full_size += calc_full_sizes(node->content.c.items[i]);
         }
-
-        free(root->content.c.items);
-    } else if (root->content.p.is_allocated) {
-        free((void *)root->content.p.data);
+    } else {
+        full_size = node->content.p.size;
     }
+
+    full_size = 1 + ber_calc_encoded_length_len(&full_size) + full_size;
+    node->full_size = full_size;
+
+    return full_size;
 }
 
-static ssize_t decode(const uint8_t *data, size_t size, asn1_tree_node_t *root) {
+ssize_t ber_decode_asn1_tree(const uint8_t *data, size_t data_size, asn1_tree_node_t *root) {
     asn1_tree_node_t **elems = NULL, *node = NULL;
-    uint16_t content_size = 0;
+    size_t content_size = 0;
     ssize_t bytes_read = 0;
     const uint8_t *tmp_data = data;
 
@@ -65,15 +77,13 @@ static ssize_t decode(const uint8_t *data, size_t size, asn1_tree_node_t *root) 
         return -1;
     }
 
-    if (0 >= size) return 0;
+    if (0 >= data_size) return 0;
 
     memset(root, 0, sizeof(*root));
 
-    root->id = id++;
-
     root->type = *tmp_data++;
 
-    if ((bytes_read = decode_content_length(tmp_data, &content_size)) < 1) {
+    if ((bytes_read = ber_decode_length(tmp_data, &content_size)) < 1) {
         errno = EINVAL;
         return -1;
     }
@@ -81,7 +91,7 @@ static ssize_t decode(const uint8_t *data, size_t size, asn1_tree_node_t *root) 
     tmp_data += bytes_read;
     root->full_size = 1 + bytes_read + content_size; // +1 byte for TAG
 
-    if (is_constructed(root->type)) {
+    if (ber_is_constructed_type(root->type)) {
         elems = root->content.c.items;
         while (content_size > 0) {
             elems = realloc(elems, (root->content.c.items_num + 1) * sizeof(*elems));
@@ -94,7 +104,7 @@ static ssize_t decode(const uint8_t *data, size_t size, asn1_tree_node_t *root) 
 
             elems[root->content.c.items_num] = node;
 
-            if ((bytes_read = decode(tmp_data, content_size, node)) < 0) {
+            if ((bytes_read = ber_decode_asn1_tree(tmp_data, content_size, node)) < 0) {
                 return -1;
             }
 
@@ -116,69 +126,10 @@ static ssize_t decode(const uint8_t *data, size_t size, asn1_tree_node_t *root) 
     return tmp_data - data + content_size;
 }
 
-typedef struct encoding_data {
-    uint8_t *buffer;
-    size_t shift;
-} encoding_data_t;
-
-static int encode_node(void *user_data, asn1_tree_node_t *node) {
-    encoding_data_t *ed = (encoding_data_t *)user_data;
-    uint8_t *buf = ed->buffer;
-    ssize_t bytes_wrote;
-    size_t shift = ed->shift;
-    uint16_t content_length;
-
-    buf[shift++] = (uint8_t)node->type;
-
-    if (node->full_size < 127)
-        content_length = node->full_size - 2; // TAG + 1 byte of content length
-    else if (node->full_size < 255)
-        content_length = node->full_size - 3; // TAG + 0x81 + 1 byte of content length
-    else if (node->full_size < 512)
-        content_length = node->full_size - 4; // TAG + 0x82 + 2 bytes of content length
-
-    if ((bytes_wrote = encode_content_length(&content_length, buf + shift)) < 0)
-        return -1;
-    shift += bytes_wrote;
-
-    if (!is_constructed(node->type)) {
-        memmove(buf + shift, node->content.p.data, node->content.p.size);
-        shift += node->content.p.size;
-    }
-
-    ed->shift = shift;
-
-    return 0;
-}
-
-// TODO: remove in prod
-static int set_zero_full_size(void *_, asn1_tree_node_t *node) {
-    node->full_size = 0;
-    return 0;
-}
-
-static uint16_t calc_full_sizes(asn1_tree_node_t *node) {
-    int i;
-    uint16_t full_size = 0;
-
-    if (is_constructed(node->type)) {
-        for (i = 0; i < node->content.c.items_num; i++) {
-            full_size += calc_full_sizes(node->content.c.items[i]);
-        }
-    } else {
-        full_size = node->content.p.size;
-    }
-
-    full_size = 1 + calc_encoded_content_length(&full_size) + full_size;
-    node->full_size = full_size;
-
-    return full_size;
-}
-
-ssize_t encode_ber(asn1_tree_node_t *root, uint8_t **buffer) {
+ssize_t ber_encode_asn1_tree(asn1_tree_node_t *root, uint8_t **buffer) {
     encoding_data_t ed;
 
-    traverse_tree(root, NULL, set_zero_full_size);
+    traverse_asn1_tree(root, NULL, set_zero_full_size);
 
     calc_full_sizes(root);
 
@@ -191,102 +142,211 @@ ssize_t encode_ber(asn1_tree_node_t *root, uint8_t **buffer) {
     ed.buffer = *buffer;
     ed.shift = 0;
 
-    if (traverse_tree(root, &ed, encode_node)) return -1;
+    if (0 != traverse_asn1_tree(root, &ed, encode_node)) return -1;
 
     return ed.shift;
 }
 
-asn1_tree_node_t *create_node(asn1_tree_node_t *root, snmp_object_type_t type, const void *data,
-                              uint16_t size, bool is_allocated) {
-    asn1_tree_node_t *result;
-    asn1_tree_node_t **items;
+ssize_t ber_decode_oid(const uint8_t *data, size_t size, oid_t *res) {
+    int *tmp_val = res->subids;
+    const uint8_t *tmp_data;
+    memset(res, 0, sizeof(*res));
 
-    if (NULL == (result = calloc(1, sizeof(*result)))) {
-        errno = ENOMEM;
-        return NULL;
-    }
+    tmp_data = data;
 
-    if (NULL != root) {
-        if (is_constructed(root->type)) {
-            items = realloc(root->content.c.items, (root->content.c.items_num + 1) * sizeof(*root->content.c.items));
+    *tmp_val++ = *tmp_data / 40;
+    *tmp_val++ = *tmp_data % 40;
+    size--;
+    tmp_data++;
 
-            if (NULL == items) {
-                errno = ENOMEM;
-                goto fail;
+    while (size) {
+        *tmp_val = 0;
+        while (size--) {
+            *tmp_val = (*tmp_val << 7) + (*tmp_data & 0x7F);
+            if (*tmp_data & 0x80) {
+                tmp_data++;
+            } else {
+                tmp_data++;
+                break;
             }
 
-            items[root->content.c.items_num++] = result;
-            root->content.c.items = items;
-        } else {
+        }
+        tmp_val++;
+    }
+
+    res->subids_cnt = tmp_val - res->subids;
+    return tmp_data - data;
+}
+
+ssize_t ber_decode_octet_string(const uint8_t *data, size_t size, char **res) {
+    size_t decoded_size = size + sizeof(char);
+
+    *res = malloc(decoded_size);
+    if (NULL == *res) {
+        errno = ENOMEM;
+        return -1;
+    }
+
+    memmove(*res, data, size);
+    (*res)[size] = '\0';
+
+    return decoded_size;
+}
+
+ssize_t ber_decode_integer(const uint8_t *data, size_t size, int *res) {
+    const uint8_t *tmp_data = data;
+    *res = 0;
+
+    if (!size || size > sizeof(*res)) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    while (size--) {
+        *res = (*res << 8) + *tmp_data++;
+    }
+
+    return tmp_data - data;
+}
+
+ssize_t ber_decode_length(const uint8_t *data, size_t *res) {
+    const uint8_t *tmp_data = data;
+    ssize_t bytes_read;
+
+    /*
+     * Length of data can be stored in short (primitive) or long (constructed) form.
+     *
+     * In the short form, the length octets shall consist of a single octet in which bit 7 is zero and bits 6 to 0
+     * encode the number of octets in the contents octets (which may be zero), as an unsigned binary integer with bit 6
+     * as the most significant bit
+     *
+     * In the long form, the length octets shall consist of an initial octet and one or more subsequent octets.
+     * The initial octet shall be encoded as follows:
+     *      a) bit 7 shall be one;
+     *      b) bits 6 to 8 shall encode the number of subsequent octets in the length octets, as an unsigned binary
+     *         integer with bit 6 as the most significant bit;
+     *      c) the value 0b11111111 shall not be used.
+     *
+     * Bits 7 to 0 of the first subsequent octet, followed by bits 7 to 0 of the second subsequent octet, followed in
+     * turn by bits 7 to 0 of each further octet up to and including the last subsequent octet, shall be the encoding
+     * of an unsigned binary integer equal to the number of octets in the contents octets, with bit 7 of the first
+     * subsequent octet as the most significant bit.
+     */
+    if (*tmp_data & 0x80) {
+        // we can't handle so big values or empty lengths. probably where was an error in packet transmission
+        if ((bytes_read = *tmp_data++ & 0x7F) > sizeof(*res) || bytes_read == 0) {
             errno = EINVAL;
-            goto fail;
+            return -1;
+        }
+
+        tmp_data += ber_decode_integer(tmp_data, (size_t)bytes_read, (int *) res);
+    } else {
+        *res = (size_t)(*tmp_data++) & 0x7F;
+    }
+
+    return tmp_data - data;
+}
+
+ssize_t ber_encode_oid(const oid_t *data, uint8_t *res) {
+    size_t i;
+    size_t len;
+    uint8_t *res_tmp = res;
+
+    *res_tmp++ = (uint8_t)(data->subids[0] * 40 + data->subids[1]);
+
+    for (i = 2; i < data->subids_cnt; i++) {
+        if (data->subids[i] >= (1 << 28))
+            len = 5;
+        else if (data->subids[i] >= (1 << 21))
+            len = 4;
+        else if (data->subids[i] >= (1 << 14))
+            len = 3;
+        else if (data->subids[i] >= (1 << 7))
+            len = 2;
+        else
+            len = 1;
+
+        while (len--) {
+            if (len)
+                *res_tmp++ = ((data->subids[i] >> (7 * len)) & 0x7F) | 0x80;
+            else
+                *res_tmp++ = (data->subids[i] >> (7 * len)) & 0x7F;
         }
     }
 
-    if (!is_constructed(type)) {
-        result->content.p.size = size;
-        result->content.p.data = data;
-        result->content.p.is_allocated = is_allocated;
-    }
-
-    result->type = type;
-    result->root = root;
-
-    return result;
-
-fail:
-    free(result);
-    return NULL;
+    return res_tmp - res;
 }
 
-int add_node(asn1_tree_node_t *root, asn1_tree_node_t *node) {
-    asn1_tree_node_t **items;
-
-    if (NULL == root || !is_constructed(root->type) || NULL == node) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    items = realloc(root->content.c.items, (root->content.c.items_num + 1) * sizeof(*root->content.c.items));
-
-    if (NULL == items) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    items[root->content.c.items_num++] = node;
-    node->root = root;
-
-    root->content.c.items = items;
-
-    return 0;
+ssize_t ber_encode_octet_string(const char *data, uint8_t *res) {
+    size_t size = strlen(data) * sizeof(*data);
+    memmove(res, data, size);
+    return size;
 }
 
-asn1_tree_node_t *copy_primitive(const asn1_tree_node_t *base) {
-    asn1_tree_node_t *result;
-    size_t data_size = base->content.p.size;
+ssize_t ber_encode_integer(const int *data, uint8_t *res) {
+    const int val = *data;
+    uint8_t *res_tmp = res;
+    size_t len = ber_calc_encoded_integer_len(data);
 
-    if (is_constructed(base->type)){
-        errno = EINVAL;
-        return NULL;
+    while (len--) {
+        *res_tmp++ = (uint8_t)((val >> (8 * len)) & 0xFF);
     }
 
-    if (NULL == (result = calloc(1, sizeof(*result)))) {
-        errno = ENOMEM;
-        return NULL;
+    return res_tmp - res;
+}
+
+ssize_t ber_encode_length(const size_t *data, uint8_t *res) {
+    size_t len = ber_calc_encoded_length_len(data);
+    uint8_t *res_tmp = res;
+
+    if (len > 1) {
+        len--;
+        *res_tmp++ = (uint8_t)(0x80 + len);
+        while (len--) {
+            *res_tmp++ = (uint8_t)((*data >> (8 * len)) & 0xFF);
+        }
+    } else {
+        *res_tmp++ = (uint8_t)*data;
     }
 
-    result->type = base->type;
-    result->content.p.size = data_size;
+    return res_tmp - res;
+}
 
-    if (NULL == (result->content.p.data = malloc(data_size))) {
-        free(result);
-        errno = ENOMEM;
-        return NULL;
+size_t ber_calc_encoded_oid_len(const oid_t *data) {
+    size_t i;
+    size_t len = 1;
+
+    for (i = 2; i < data->subids_cnt; ++i) {
+        if (data->subids[i] >= (1 << 28))
+            len += 5;
+        else if (data->subids[i] >= (1 << 21))
+            len += 4;
+        else if (data->subids[i] >= (1 << 14))
+            len += 3;
+        else if (data->subids[i] >= (1 << 7))
+            len += 2;
+        else
+            len += 1;
     }
 
-    result->content.p.is_allocated = true;
-    memmove((void *)result->content.p.data, base->content.p.data, data_size);
+    return len;
+}
 
-    return result;
+size_t ber_calc_encoded_octet_string_len(const char *data) { return strlen(data) * sizeof(char); }
+
+size_t ber_calc_encoded_integer_len(const int *data) {
+    if (*data & (0xFF << 24))
+        return 4;
+    else if (*data & (0xFF << 16))
+        return 3;
+    else if (*data & (0xFF << 8))
+        return 2;
+    else
+        return 1;
+}
+
+size_t ber_calc_encoded_length_len(const size_t *data) {
+    return (*data > 127)
+        ? ber_calc_encoded_integer_len((const int *) data) + 1
+        : 1;
 }

@@ -3,4 +3,17 @@ project(snmp C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(snmp main.c ber.c ber.h transcoder.c transcoder.h snmp_types.h utilities.c utilities.h snmp_mib.c snmp_mib.h snmp.c snmp.h)
+add_executable(snmp
+        main.c
+        ber.c
+        ber.h
+        utilities.c
+        utilities.h
+        mib.c
+        mib.h
+        processor.c
+        processor.h
+        asn1.c
+        asn1.h)
+
+target_compile_options(snmp PRIVATE -Wall -Wextra -pedantic -Werror)

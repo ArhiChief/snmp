@@ -1,17 +1,16 @@
-//
-// Created by arhichief on 2/8/19.
-//
-
 #include <stdbool.h>
 #include <memory.h>
-#include "snmp_mib.h"
+#include <stdio.h>
+
+#include "mib.h"
+#include "utilities.h"
 
 typedef struct mib_tree_node mib_tree_node_t;
 
 struct mib_tree_node {
     int32_t subid;
 
-    int childs_cnt;
+    size_t childs_cnt;
     mib_tree_node_t **childs;
 
     mib_entry_t entry;
@@ -19,18 +18,16 @@ struct mib_tree_node {
 
 static mib_tree_node_t mib = {
         .subid = 1,
-        .childs_cnt = 0,
-        .childs = NULL,
-        .entry = { 0 }
 };
 
-static int mib_tree_node_cmp(const void *a, const void *b) {
+static int comparator(const void *a, const void *b) {
     return (*((const mib_tree_node_t **)a))->subid - (*((const mib_tree_node_t **)b))->subid;
 }
 
-int add_mib_entry(const snmp_oid_t *oid, snmp_object_type_t type, getter_t getter, setter_t setter) {
+int mib_add_entry(const oid_t *oid, object_type_t type, mib_getter_t getter,
+                  mib_setter_t setter) {
     mib_tree_node_t *node = &mib, *subnode, key, *key_ptr;
-    int i;
+    size_t i;
     bool found = true;
 
     key_ptr = &key;
@@ -38,7 +35,7 @@ int add_mib_entry(const snmp_oid_t *oid, snmp_object_type_t type, getter_t gette
     for (i = 1; i < oid->subids_cnt; i++) {
         key.subid = oid->subids[i];
 
-        if (NULL == (subnode = bsearch(&key_ptr, node->childs, node->childs_cnt, sizeof(void *), mib_tree_node_cmp))) {
+        if (NULL == (subnode = bsearch(&key_ptr, node->childs, node->childs_cnt, sizeof(*node->childs), comparator))) {
             found = false;
             break;
         }
@@ -47,7 +44,7 @@ int add_mib_entry(const snmp_oid_t *oid, snmp_object_type_t type, getter_t gette
     }
 
     if (!found) {
-        for (i; i < oid->subids_cnt; i++) {
+        for (; i < oid->subids_cnt; i++) {
 
             subnode = malloc(sizeof(*subnode));
 
@@ -56,7 +53,7 @@ int add_mib_entry(const snmp_oid_t *oid, snmp_object_type_t type, getter_t gette
 
             subnode->subid = oid->subids[i];
 
-            qsort(node->childs, node->childs_cnt, sizeof(*node->childs), mib_tree_node_cmp);
+            qsort(node->childs, node->childs_cnt, sizeof(*node->childs), comparator);
 
             node = subnode;
         }
@@ -70,16 +67,16 @@ int add_mib_entry(const snmp_oid_t *oid, snmp_object_type_t type, getter_t gette
     return found;
 }
 
-const mib_entry_t *find_mib_entry(const snmp_oid_t *oid) {
+const mib_entry_t *mib_find(const oid_t *oid) {
     mib_tree_node_t *node = &mib, *subnode, key, *key_ptr;
-    int i;
+    size_t i;
 
     key_ptr = &key;
 
     for (i = 1; i < oid->subids_cnt; i++) {
         key.subid = oid->subids[i];
 
-        if (NULL == (subnode = bsearch(&key_ptr, node->childs, node->childs_cnt, sizeof(void *), mib_tree_node_cmp))) {
+        if (NULL == (subnode = bsearch(&key_ptr, node->childs, node->childs_cnt, sizeof(*node->childs), comparator))) {
             return NULL;
         }
 
@@ -89,31 +86,43 @@ const mib_entry_t *find_mib_entry(const snmp_oid_t *oid) {
     return node->childs_cnt ? NULL : &node->entry;
 }
 
-// TODO: need to be tested!!!
-const mib_entry_t *findnext_mib_entry(const snmp_oid_t *oid) {
+const mib_entry_t *mib_findnext(const oid_t *oid) {
     mib_tree_node_t *node = &mib, *subnode, key, *key_ptr;
-    int i, j;
+    size_t i;
     key_ptr = &key;
 
     for (i = 1; i < oid->subids_cnt; i++) {
         key.subid = oid->subids[i];
 
-        if (NULL == (subnode = bsearch(&key_ptr, node->childs, node->childs_cnt, sizeof(void *), mib_tree_node_cmp))) {
+        if (NULL == (subnode = bsearch(&key_ptr, node->childs, node->childs_cnt, sizeof(void *), comparator))) {
             break;
         }
 
         node = *(mib_tree_node_t **)subnode;
     }
 
-    if (i < oid->subids_cnt) {
-        for (int i = 0; i < node->childs_cnt; i++) {
-            if (key.subid <= node->childs[i]->subid) {
-                return &node->childs[i]->entry;
-            }
-        }
-
-        return NULL;
+    while (node->childs_cnt) {
+        node = *node->childs;
     }
 
     return &node->entry;
+}
+
+static void free_mib_node(mib_tree_node_t *node) {
+    size_t i;
+    for (i = 0; i < node->childs_cnt; i++) {
+        free_mib_node(node->childs[i]);
+        free(node->childs);
+    }
+
+    free(node);
+}
+
+void mib_free() {
+    size_t i;
+    for (i = 0; i < mib.childs_cnt; i++) {
+        free_mib_node(mib.childs[i]);
+    }
+
+    free(mib.childs);
 }
