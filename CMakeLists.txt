@@ -13,7 +13,7 @@ add_executable(snmp
         mib.h
         processor.c
         processor.h
-        asn1.c
-        asn1.h)
+        asn1/asn1.c
+        asn1/asn1.h)
 
 target_compile_options(snmp PRIVATE -Wall -Wextra -pedantic -Werror)

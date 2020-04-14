@@ -1,13 +1,31 @@
+/*
+ * asn1.c
+ * Copyright (c) 2020 Sergei Kosivchenko <archichief@gmail.com>
+ *
+ * smart-snmp is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * smart-snmp is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 
 #include "asn1.h"
-#include "ber.h"
+#include "../ber.h"
 
-asn1_tree_node_t *create_asn1_node(asn1_tree_node_t *root, int type, const void *data, size_t size, bool is_allocated) {
-    asn1_tree_node_t *result;
-    asn1_tree_node_t **items;
+asn1_node_t *create_asn1_node(asn1_node_t *root, int type, const void *data, size_t size, bool is_allocated) {
+    asn1_node_t *result;
+    asn1_node_t **items;
 
     if (NULL == (result = calloc(1, sizeof(*result)))) {
         errno = ENOMEM;
@@ -47,8 +65,8 @@ fail:
     return NULL;
 }
 
-int add_asn1_node(asn1_tree_node_t *root, asn1_tree_node_t *node) {
-    asn1_tree_node_t **items;
+int add_asn1_node(asn1_node_t *root, asn1_node_t *node) {
+    asn1_node_t **items;
 
     if (NULL == root || !ber_is_constructed_type(root->type) || NULL == node) {
         errno = EINVAL;
@@ -70,8 +88,8 @@ int add_asn1_node(asn1_tree_node_t *root, asn1_tree_node_t *node) {
     return 0;
 }
 
-asn1_tree_node_t *copy_primitive_asn1_node(const asn1_tree_node_t *base) {
-    asn1_tree_node_t *result;
+asn1_node_t *copy_primitive_asn1_node(const asn1_node_t *base) {
+    asn1_node_t *result;
     size_t data_size = base->content.p.size;
 
     if (ber_is_constructed_type(base->type)){
@@ -99,10 +117,10 @@ asn1_tree_node_t *copy_primitive_asn1_node(const asn1_tree_node_t *base) {
     return result;
 }
 
-int traverse_asn1_tree(asn1_tree_node_t *root, void *user_data, asn1_tree_traverse_clbk_t clbk) {
+int traverse_asn1_tree(asn1_node_t *root, void *user_data, asn1_tree_traverse_clbk_t clbk) {
     int res = 0;
     size_t i = 0;
-    asn1_tree_node_t *node = NULL;
+    asn1_node_t *node = NULL;
 
     if (0 != (res = clbk(user_data, root))) return res;
 
@@ -117,9 +135,9 @@ int traverse_asn1_tree(asn1_tree_node_t *root, void *user_data, asn1_tree_traver
     return 0;
 }
 
-void release_asn1_tree(asn1_tree_node_t *root) {
+void release_asn1_tree(asn1_node_t *root) {
     size_t i;
-    asn1_tree_node_t *node;
+    asn1_node_t *node;
 
     if (ber_is_constructed_type(root->type)) {
         for (i = 0; i < root->content.c.items_num; ++i) {

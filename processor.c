@@ -1,3 +1,21 @@
+/*
+ * processor.c
+ * Copyright (c) 2020 Sergei Kosivchenko <archichief@gmail.com>
+ *
+ * smart-snmp is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * smart-snmp is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <memory.h>
 #include <errno.h>
 
@@ -5,9 +23,10 @@
 #include "ber.h"
 #include "mib.h"
 #include "utilities.h"
-#include "asn1.h"
+#include "asn1/asn1.h"
 
-typedef bool (*check_strategy_t)(const asn1_tree_node_t *req);
+typedef bool (*check_strategy_t)(const asn1_node_t *req);
+
 typedef const mib_entry_t *(*search_func_t)(const oid_t *oid);
 
 static bool is_version_supported(snmp_version_t ver) {
@@ -19,8 +38,8 @@ static bool is_community_supported(const char *comunity) {
 }
 
 // check GetRequest, GetNextRequest, GetResponse, SetRequest
-static bool check_non_trap_request(const asn1_tree_node_t *pdu) {
-    const asn1_tree_node_t *item, *varbind;
+static bool check_non_trap_request(const asn1_node_t *pdu) {
+    const asn1_node_t *item, *varbind;
     size_t i;
     int val = 0;
 
@@ -30,7 +49,7 @@ static bool check_non_trap_request(const asn1_tree_node_t *pdu) {
     // first element of PDU is Request ID
     item = pdu->content.c.items[0];
     if (OBJECT_TYPE_INTEGER != item->type ||
-            ber_decode_integer(item->content.p.data, item->content.p.size, &val) < 1 ||
+        ber_decode_integer(item->content.p.data, item->content.p.size, &val) < 1 ||
         val < 0) {
         return false;
     }
@@ -40,7 +59,7 @@ static bool check_non_trap_request(const asn1_tree_node_t *pdu) {
         item = pdu->content.c.items[i];
 
         if (OBJECT_TYPE_INTEGER != item->type ||
-                ber_decode_integer(item->content.p.data, item->content.p.size, &val) != 1 ||
+            ber_decode_integer(item->content.p.data, item->content.p.size, &val) != 1 ||
             val > 0) {
             return false;
         }
@@ -55,7 +74,7 @@ static bool check_non_trap_request(const asn1_tree_node_t *pdu) {
             // varbind must be SEQUENCE with 2 primitive elements and first element must be OID
             if (OBJECT_TYPE_SEQUENCE != varbind->type || 2 != varbind->content.c.items_num ||
                 OBJECT_TYPE_OID != varbind->content.c.items[0]->type ||
-                    ber_is_constructed_type(varbind->content.c.items[1]->type)) {
+                ber_is_constructed_type(varbind->content.c.items[1]->type)) {
                 return false;
             }
         }
@@ -76,8 +95,8 @@ static check_strategy_t is_request_type_supported(request_type_t type) {
     }
 }
 
-static const asn1_tree_node_t *check_snmp_request(const asn1_tree_node_t *req) {
-    const asn1_tree_node_t *item, *pdu = NULL;
+static const asn1_node_t *check_snmp_request(const asn1_node_t *req) {
+    const asn1_node_t *item, *pdu = NULL;
     snmp_version_t version;
     char *community = NULL;
     check_strategy_t strategy;
@@ -89,17 +108,17 @@ static const asn1_tree_node_t *check_snmp_request(const asn1_tree_node_t *req) {
 
     // first element is SNMP Version (1 byte length)
     item = req->content.c.items[0];
-    if (OBJECT_TYPE_INTEGER != item->type                                          ||
-        item->content.p.size != 1                                                       ||
-            ber_decode_integer(item->content.p.data, item->content.p.size, (int *) &version) != 1    ||
+    if (OBJECT_TYPE_INTEGER != item->type ||
+        item->content.p.size != 1 ||
+        ber_decode_integer(item->content.p.data, item->content.p.size, (int *) &version) != 1 ||
         !is_version_supported(version)) {
         goto end;
     }
 
     // second element is SNMP Community String
     item = req->content.c.items[1];
-    if (OBJECT_TYPE_OCTET_STRING != item->type                                     ||
-            ber_decode_octet_string(item->content.p.data, item->content.p.size, &community) < 1       ||
+    if (OBJECT_TYPE_OCTET_STRING != item->type ||
+        ber_decode_octet_string(item->content.p.data, item->content.p.size, &community) < 1 ||
         !is_community_supported(community)) {
         goto end;
     }
@@ -150,13 +169,13 @@ static bool encode_data(const mib_entry_t *mib_entry, void **val, size_t *val_si
     return true;
 }
 
-static bool handle_get_request(const asn1_tree_node_t *pdu, asn1_tree_node_t *resp, search_func_t search) {
+static bool handle_get_request(const asn1_node_t *pdu, asn1_node_t *resp, search_func_t search) {
     size_t i;
     oid_t oid;
     size_t vbs_cnt = pdu->content.c.items[3]->content.c.items_num;
-    asn1_tree_node_t **req_vbs = pdu->content.c.items[3]->content.c.items,
+    asn1_node_t **req_vbs = pdu->content.c.items[3]->content.c.items,
             *resp_pdu = NULL, *resp_vb = NULL, *resp_vb_list;
-    const asn1_tree_node_t *req_vb_key, *pdu_root = pdu->root;
+    const asn1_node_t *req_vb_key, *pdu_root = pdu->root;
     const mib_entry_t *mib_entry;
 
     size_t encoded_val_size;
@@ -177,7 +196,7 @@ static bool handle_get_request(const asn1_tree_node_t *pdu, asn1_tree_node_t *re
 
         create_asn1_node(resp_vb, req_vb_key->type, encoded_val, encoded_val_size, true);
 
-        if(NULL == (mib_entry = search(&oid))) {
+        if (NULL == (mib_entry = search(&oid))) {
 
         } else {
             encode_data(mib_entry, &encoded_val, &encoded_val_size);
@@ -200,13 +219,14 @@ static bool handle_get_request(const asn1_tree_node_t *pdu, asn1_tree_node_t *re
 }
 
 ssize_t process_request(const uint8_t *req_packet, size_t req_size, uint8_t **resp_packet) {
-    asn1_tree_node_t request, response = { 0 };
-    const asn1_tree_node_t *pdu;
+    asn1_node_t request, response = {0};
+    const asn1_node_t *pdu;
     *resp_packet = NULL;
     bool res;
     ssize_t resp_size = -1, bytes_decoded;
 
-    if ((bytes_decoded = ber_decode_asn1_tree(req_packet, req_size, &request)) < 0 || (size_t)bytes_decoded != req_size)
+    if ((bytes_decoded = ber_decode_asn1_tree(req_packet, req_size, &request)) < 0 ||
+        (size_t) bytes_decoded != req_size)
         return -1;
 
     if (NULL == (pdu = check_snmp_request(&request))) {

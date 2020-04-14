@@ -1,3 +1,21 @@
+/*
+ * ber.c
+ * Copyright (c) 2020 Sergei Kosivchenko <archichief@gmail.com>
+ *
+ * smart-snmp is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * smart-snmp is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include <stdio.h>
 #include <errno.h>
 #include <memory.h>
@@ -5,15 +23,13 @@
 #include "ber.h"
 #include "utilities.h"
 
-
-
 typedef struct encoding_data {
     uint8_t *buffer;
     size_t shift;
 } encoding_data_t;
 
 
-static int encode_node(void *user_data, asn1_tree_node_t *node) {
+static int encode_node(void *user_data, asn1_node_t *node) {
     encoding_data_t *ed = (encoding_data_t *)user_data;
     uint8_t *buf = ed->buffer;
     ssize_t bytes_wrote;
@@ -43,12 +59,12 @@ static int encode_node(void *user_data, asn1_tree_node_t *node) {
     return 0;
 }
 
-static int set_zero_full_size(__attribute__((unused)) void *_, asn1_tree_node_t *node) {
+static int set_zero_full_size(__attribute__((unused)) void *_, asn1_node_t *node) {
     node->full_size = 0;
     return 0;
 }
 
-static size_t calc_full_sizes(asn1_tree_node_t *node) {
+static size_t calc_full_sizes(asn1_node_t *node) {
     size_t i;
     size_t full_size = 0;
 
@@ -66,8 +82,8 @@ static size_t calc_full_sizes(asn1_tree_node_t *node) {
     return full_size;
 }
 
-ssize_t ber_decode_asn1_tree(const uint8_t *data, size_t data_size, asn1_tree_node_t *root) {
-    asn1_tree_node_t **elems = NULL, *node = NULL;
+ssize_t ber_decode_asn1_tree(const uint8_t *data, size_t data_size, asn1_node_t *root) {
+    asn1_node_t **elems = NULL, *node = NULL;
     size_t content_size = 0;
     ssize_t bytes_read = 0;
     const uint8_t *tmp_data = data;
@@ -126,7 +142,7 @@ ssize_t ber_decode_asn1_tree(const uint8_t *data, size_t data_size, asn1_tree_no
     return tmp_data - data + content_size;
 }
 
-ssize_t ber_encode_asn1_tree(asn1_tree_node_t *root, uint8_t **buffer) {
+ssize_t ber_encode_asn1_tree(asn1_node_t *root, uint8_t **buffer) {
     encoding_data_t ed;
 
     traverse_asn1_tree(root, NULL, set_zero_full_size);
@@ -169,7 +185,6 @@ ssize_t ber_decode_oid(const uint8_t *data, size_t size, oid_t *res) {
                 tmp_data++;
                 break;
             }
-
         }
         tmp_val++;
     }

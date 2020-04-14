@@ -1,3 +1,21 @@
+/*
+ * ber.h
+ * Copyright (c) 2020 Sergei Kosivchenko <archichief@gmail.com>
+ *
+ * smart-snmp is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * smart-snmp is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #ifndef SNMP_BER_H
 #define SNMP_BER_H
 
@@ -6,7 +24,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-#include "asn1.h"
+#include "asn1/asn1.h"
 
 #ifndef SNMP_OID_LEN
 #define SNMP_OID_LEN 40
@@ -51,8 +69,8 @@ typedef enum snmp_version {
 
 static inline bool ber_is_constructed_type(int type) { return (bool)(type & 0x20); }
 
-ssize_t ber_decode_asn1_tree(const uint8_t *data, size_t data_size, asn1_tree_node_t *root);
-ssize_t ber_encode_asn1_tree(asn1_tree_node_t *root, uint8_t **buffer);
+ssize_t ber_decode_asn1_tree(const uint8_t *data, size_t data_size, asn1_node_t *root);
+ssize_t ber_encode_asn1_tree(asn1_node_t *root, uint8_t **buffer);
 
 ssize_t ber_decode_oid(const uint8_t *data, size_t size, oid_t *res);
 ssize_t ber_decode_octet_string(const uint8_t *data, size_t size, char **res);
