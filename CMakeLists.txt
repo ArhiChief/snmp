@@ -5,8 +5,8 @@ set(CMAKE_C_STANDARD 11)
 
 add_executable(snmp
         main.c
-        ber.c
-        ber.h
+        ber/ber.c
+        ber/ber.h
         utilities.c
         utilities.h
         mib.c
@@ -14,6 +14,6 @@ add_executable(snmp
         processor.c
         processor.h
         asn1/asn1.c
-        asn1/asn1.h)
+        asn1/asn1.h progam_config.h log/log.c log/log.h)
 
 target_compile_options(snmp PRIVATE -Wall -Wextra -pedantic -Werror)

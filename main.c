@@ -16,324 +16,230 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <stdint.h>
-#include <memory.h>
-#include <errno.h>
-#include <stdbool.h>
-#include <unitypes.h>
 #include <stdlib.h>
-#include <string.h>
+#include <stdlib.h>
+#include <getopt.h>
 #include <stdio.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <time.h>
+#include <string.h>
+#include <stdbool.h>
+#include <sys/socket.h>
+#include <errno.h>
+
+#include "progam_config.h"
+#include "log/log.h"
+
+/* global program parameters and their getters */
+static const char *program_name = "smart-snmp";
+const char *g_program_name() { return program_name; }
+
+static int socket_type = AF_INET;
+int g_socket_type() { return socket_type; }
+
+static bool use_auth = false;
+bool g_use_auth() { return use_auth; }
+
+static const char *community_name = "public";
+const char *g_community_name() { return community_name; }
+
+static int max_connections;
+int g_max_connections() { return max_connections; }
+
+static bool use_udp = true;
+bool g_use_udp() { return use_udp; }
+bool g_use_tcp() { return !use_udp; }
+
+static int port = 161;
+int g_port() { return port; }
+
+static bool use_syslog;
+bool g_use_syslog() { return use_syslog; }
+
+static snmp_version_t snmp_version = V2C;
+snmp_version_t g_snmp_version() { return snmp_version; }
+
+static char **handler_paths = NULL;
+char * const *g_handler_paths() { return handler_paths; }
+/*---------------------------------------------*/
 
 
-#include "processor.h"
-#include "mib.h"
+_Noreturn static void show_usage() {
+    const char *msg = "Usage: %s [options]\n"
+                        "\t-4, --use-ipv4\n"
+                        "\t\tUse IPv4, default\n"
+                        "\t-6, --use-ipv5\n"
+                        "\t\tUse IPv6\n"
+                        "\t-a, --auth\n"
+                        "\t\tRequire client authentication, thus SNMP version 2c and higher, default is off\n"
+                        "\t-c, --community\n"
+                        "\t\tSNMP version 2c authentication, or community, string, default is \"public\"\n"
+                        "\t\tRemember to also enable --auth to activate authentication\n"
+                        "\t-h, --help\n"
+                        "\t\tShow summary of command line options and exit\n"
+                        "\t-m, --max-connections NUMBER\n"
+                        "\t\tAmount of connections concurrently handled by program, default is 10\n"
+                        "\t-p, --udp-port PORT\n"
+                        "\t\tUDP port to listen to for incoming connections, default is 161\n"
+                        "\t-P, --tcp-port PORT\n"
+                        "\t\tTCP port to listen to for incoming connections, default is 161\n"
+                        "\t-s, --syslog\n"
+                        "\t\tUse syslog for logging\n"
+                        "\t-v, --version\n"
+                        "\t\tShow program version and exit\n"
+                        "\t-x --handlers PATH\n"
+                        "\t\tPath to SNMP requests handlers";
 
-typedef struct snmp_client {
-    time_t          timestamp;
-    int             sockfd;
-    struct in_addr  addr;
-    in_port_t       port;
-    uint8_t         packet[BUFSIZ];
-    size_t          size;
-} snmp_client_t;
-
-
-static snmp_client_t client;
-
-
-static int sockfd;
-
-static volatile int finish;
-
-static int configure_socket() {
-    const char *hostname = "0.0.0.0";
-    const char *portname = "1993";
-    struct addrinfo addr_hint;
-    struct addrinfo *addr = NULL;
-    int ret;
-
-    /* Configure sockets listen address, port and type*/
-    memset(&addr_hint, 0, sizeof(addr_hint));
-    addr_hint.ai_family = AF_UNSPEC;
-    addr_hint.ai_socktype = SOCK_DGRAM;
-    addr_hint.ai_protocol = 0;
-    addr_hint.ai_flags = AI_PASSIVE | AI_ADDRCONFIG;
-
-    if (0 != (ret = getaddrinfo(hostname, portname, &addr_hint, &addr))) {
-//        log_critical("Can't obtain addrinfo for %s:%s: %s", hostname, portname, gai_strerror(ret));
-        return ret;
-    }
-
-    /* Open UDP socket and bind it to machine address and SNMP port */
-    if (-1 == (sockfd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol))) {
-//        log_critical("Failed to open UDP socket: %s", strerror(errno));
-        ret = errno;
-        goto end;
-    }
-
-    if (bind(sockfd, addr->ai_addr, addr->ai_addrlen) == -1) {
-        ret = errno;
-//        log_critical("Can't bind UDP socket to %s:%d: %s", hostname, ntohs(((struct sockaddr_in *)addr->ai_addr)->sin_port),
-//                     strerror(errno));
-        goto end;
-    }
-
-    end:
-    freeaddrinfo(addr);
-    return ret;
+    fprintf(stdout, msg, g_program_name());
+    exit(EXIT_SUCCESS);
 }
 
-static void handle_incoming_datagram() {
-    ssize_t rv;
-    char straddr[INET_ADDRSTRLEN] = { '\0' };
-    socklen_t socklen;
-    struct sockaddr_in sockaddr;
+_Noreturn static void show_version() {
+    const char *msg = "%s version 0.01";
 
-    uint8_t *resp;
-    ssize_t resp_size;
-
-
-    /* Read whole UDP packet from socket */
-    socklen = sizeof(sockaddr);
-    rv = recvfrom(sockfd, client.packet, sizeof(client.packet), 0, (struct sockaddr *)&sockaddr, &socklen);
-
-    if (rv == -1) {
-//        log_error("Failde to receive UDP packet with SNMP request: %s", strerror(errno));
-        return;
-    }
-
-    client.timestamp = time(NULL);
-    client.sockfd = sockfd;
-    client.addr = sockaddr.sin_addr;
-    client.port = sockaddr.sin_port;
-    client.size = rv;
-
-    /* Call SNMP processor what will analyse request and prepare response packet */
-    inet_ntop(AF_INET, &sockaddr.sin_addr, straddr, sizeof(straddr));
-
-    resp_size = process_request(client.packet, client.size, &resp);
-
-
-    rv = sendto(sockfd, resp, resp_size, MSG_DONTWAIT, (struct sockaddr *)&sockaddr, socklen);
-    inet_ntop(AF_INET, &sockaddr.sin_addr, straddr, sizeof(straddr));
-    if (rv == -1) {
-        // Log warning
-    } else if (rv != resp_size) {
-        // Log warning
-    }
-
-    free(resp);
+    fprintf(stdout, msg, g_program_name());
+    exit(EXIT_SUCCESS);
 }
 
+static const char *progname(const char *arg0) {
+    const char *nm;
 
-static int snmp_start() {
-    fd_set rfds;
-    struct timeval tv_timeout = { .tv_sec = 2, .tv_usec = 0 };
-    struct sockaddr_in sin;
-    socklen_t len = sizeof(sin);
+    nm = strrchr(arg0, '/');
+    if (nm)
+        nm++;
+    else
+        nm = arg0;
 
-    if (sockfd < 0) return 1;
+    return nm;
+}
 
-    if (getsockname(sockfd, (struct sockaddr *)&sin, &len) == -1) {
-//        log_critical("Can't obtain information about SNMP service socket: %s", strerror(errno));
+static int parse_handlers_paths(char *paths) {
+    int paths_cnt = 1;
+    char *path;
+    char *rest;
+    char **tmp;
+
+    while ((path = strtok_r(paths, ",", &rest))) {
+        tmp = realloc(handler_paths, (paths_cnt) * sizeof(*handler_paths));
+        if (tmp) {
+            handler_paths = tmp;
+            handler_paths[paths_cnt - 1] = path;
+        } else {
+            errno = ENOMEM;
+            return -1;
+        }
+
+        paths_cnt++;
+    }
+
+    tmp = realloc(handler_paths, paths_cnt * sizeof(*handler_paths));
+    if (tmp) {
+        handler_paths = tmp;
+        handler_paths[paths_cnt - 1] = NULL;
+    } else {
+        errno = ENOMEM;
         return -1;
     }
 
-//    log_info("Start listen for incomming UDP SNMP requests on 0.0.0.0:%d", ntohs(sin.sin_port));
-
-    while (!finish) {
-        FD_ZERO(&rfds);
-        FD_SET(sockfd, &rfds);
-
-        if (select(sockfd + 1, &rfds, NULL, NULL, &tv_timeout) == -1) {
-            if (finish) break;
-
-            //TODO: Maybe EINT must be handled
-            return errno;
-        }
-
-        // handle UDP packets
-        if (FD_ISSET(sockfd, &rfds)) handle_incoming_datagram();
-
-        tv_timeout.tv_sec = 2;
-        tv_timeout.tv_usec = 0;
-    }
-
     return 0;
 }
 
+_Noreturn static void show_unrecognized_option(const char arg) {
+    const char *msg = "Unrecognized option '%c'. Use %s -h to get help.";
 
-
-
-
-
-
-int get_device_type(void **value, size_t *size, bool *is_allocated) {
-    static const oid_t oid = {.subids = { 1, 3, 6, 1, 2, 1, 25, 3, 1, 5 }, .subids_cnt = 10};
-
-    *value = (void *)&oid;
-    *size = sizeof(oid);
-    *is_allocated = false;
-
-    return 0;
-}
-int get_device_model(void **value, size_t *size, bool *is_allocated) {
-    static const char str[] = "MyQ Virtual Device";
-
-    *value = (void *)&str;
-    *size = sizeof(str);
-    *is_allocated = false;
-
-    return 0;
-}
-int get_device_hw_addr(void **value, size_t *size, bool *is_allocated) {
-    static const uint8_t hw_addr[] = { 0x18, 0xdb, 0xf2, 0x3d, 0xde, 0x50, 0x00 };
-
-    *value = (void *)&hw_addr;
-    *size = sizeof(hw_addr);
-    *is_allocated = false;
-
-    return 0;
-}
-int get_device_sn(void **value, size_t *size, bool *is_allocated) {
-    static const char str[] = "SN2W443554";
-
-    *value = (void *)&str;
-    *size = sizeof(str);
-    *is_allocated = false;
-
-    return 0;
+    fprintf(stdout, msg, arg, g_program_name());
+    exit(EXIT_FAILURE);
 }
 
-int get_c1(void **value, size_t *size, bool *is_allocated) {
-    static const int cnt = 200;
-
-    *value = (void *)&cnt;
-    *size = sizeof(cnt);
-    *is_allocated = false;
-
-    return 0;
-}
-
-int get_c2(void **value, size_t *size, bool *is_allocated) {
-    static const int cnt = 200;
-
-    *value = (void *)&cnt;
-    *size = sizeof(cnt);
-    *is_allocated = false;
-
-    return 0;
-}
-
-int get_c3(void **value, size_t *size, bool *is_allocated) {
-    static const int cnt = 50;
-
-    *value = (void *)&cnt;
-    *size = sizeof(cnt);
-    *is_allocated = false;
-
-    return 0;
-}
-
-int get_c4(void **value, size_t *size, bool *is_allocated) {
-    static const int cnt = 100;
-
-    *value = (void *)&cnt;
-    *size = sizeof(cnt);
-    *is_allocated = false;
-
-    return 0;
-}
-
-
-
-int main() {
-    oid_t hw_info = {
-            .subids = { 1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 2, 2 },
-            .subids_cnt = 12
-    }, model = {
-            .subids = { 1, 3, 6, 1, 2, 1, 25, 3, 2, 1, 3, 1 } ,
-            .subids_cnt = 12
-    }, hw_addr = {
-            .subids = { 1, 3, 6, 1, 2, 1, 2, 2, 1, 6, 1 },
-            .subids_cnt = 11
-    }, sn = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43,   5,  1, 1,  17, 1},
-            .subids_cnt = 12
-    }, c1_1 = {
-            .subids = { 1, 3, 6, 1, 4, 1, 11, 2, 3, 9, 4, 2, 1, 1, 16, 1, 44, 1, 2 },
-            .subids_cnt = 19
-    }, c1_2 = {
-            .subids = { 1, 3, 6, 1, 4, 1, 11, 2, 3, 9, 4, 2, 1, 1, 16, 1, 44, 2, 1 },
-            .subids_cnt = 17
-    }, c1_3 = {
-            .subids = { 1, 3, 6, 1, 4, 1, 11, 2, 3, 9, 4, 2, 1, 1, 16, 1, 44, 2, 2 },
-            .subids_cnt = 19
-    }, c1_4 = {
-            .subids = { 1, 3, 6, 1, 4, 1, 11, 2, 3, 9, 4, 2, 1, 1, 16, 1, 44, 1, 3 },
-            .subids_cnt = 19
-    }, c2_1 = {
-            .subids = { 1, 3, 6, 1, 4, 1, 11, 2, 3, 9, 4, 2, 1, 2, 2, 1, 62 },
-            .subids_cnt = 17
-    }, c3_1 = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43, 11,1, 1, 9, 1, 1 },
-            .subids_cnt = 13
-    }, c3_2 = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43, 11,1, 1, 9, 1, 2 },
-            .subids_cnt = 13
-    }, c3_3 = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43, 11,1, 1, 9, 1, 3 },
-            .subids_cnt = 13
-    }, c3_4 = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43, 11,1, 1, 9, 1, 4 },
-            .subids_cnt = 13
-    }, c4_1 = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43, 11,1, 1, 8, 1, 1 },
-            .subids_cnt = 13
-    }, c4_2 = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43, 11,1, 1, 8, 1, 2 },
-            .subids_cnt = 13
-    }, c4_3 = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43, 11,1, 1, 8, 1 ,3 },
-            .subids_cnt = 13
-    }, c4_4 = {
-            .subids = { 1, 3, 6, 1, 2, 1, 43, 11,1, 1, 8, 1, 4 },
-            .subids_cnt = 13
+static int parse_args(int argc, char **argv) {
+    static const char *short_options = "ac:hm:p:P:svV:h:";
+    static const struct option long_options[] = {
+            {"use-ipv4", no_argument, NULL, '4'},
+            {"use-ipv6", no_argument, NULL, '6'},
+            {"auth", no_argument, NULL, 'a'},
+            {"community", required_argument, NULL, 'c'},
+            {"help", no_argument, NULL, 'h'},
+            {"max-connections", required_argument, NULL, 'm'},
+            {"udp-port", required_argument, NULL, 'p'},
+            {"tcp-port", required_argument, NULL, 'P'},
+            {"syslog", no_argument, NULL, 's'},
+            {"version", no_argument, NULL, 'v'},
+            {"snmp-version", required_argument, NULL, 'V'},
+            {"handlers", required_argument, NULL, 'x'}
     };
 
+    int opt = 1;
+    int opt_index;
+    char *e;
 
-    mib_add_entry(&hw_info, OBJECT_TYPE_OID, get_device_type, NULL);
-    mib_add_entry(&model, OBJECT_TYPE_OCTET_STRING, get_device_model, NULL);
-    mib_add_entry(&hw_addr, OBJECT_TYPE_OCTET_STRING, get_device_hw_addr, NULL);
-    mib_add_entry(&sn, OBJECT_TYPE_OCTET_STRING, get_device_sn, NULL);
+    program_name = progname(argv[0]);
 
-    mib_add_entry(&c1_1, OBJECT_TYPE_INTEGER, get_c1, NULL);
-    mib_add_entry(&c1_2, OBJECT_TYPE_INTEGER, get_c1, NULL);
-    mib_add_entry(&c1_3, OBJECT_TYPE_INTEGER, get_c1, NULL);
-    mib_add_entry(&c1_4, OBJECT_TYPE_INTEGER, get_c1, NULL);
-
-    mib_add_entry(&c2_1, OBJECT_TYPE_INTEGER, get_c2, NULL);
-
-    mib_add_entry(&c3_1, OBJECT_TYPE_INTEGER, get_c3, NULL);
-    mib_add_entry(&c3_2, OBJECT_TYPE_INTEGER, get_c3, NULL);
-    mib_add_entry(&c3_3, OBJECT_TYPE_INTEGER, get_c3, NULL);
-    mib_add_entry(&c3_4, OBJECT_TYPE_INTEGER, get_c3, NULL);
-
-    mib_add_entry(&c4_1, OBJECT_TYPE_INTEGER, get_c4, NULL);
-    mib_add_entry(&c4_2, OBJECT_TYPE_INTEGER, get_c4, NULL);
-    mib_add_entry(&c4_3, OBJECT_TYPE_INTEGER, get_c4, NULL);
-    mib_add_entry(&c4_4, OBJECT_TYPE_INTEGER, get_c4, NULL);
-
-    if (!configure_socket()) {
-        snmp_start();
+    while((opt = getopt_long(argc, argv, short_options, long_options, &opt_index)) > 0) {
+        // TODO: add parsing checks for 'm', 'p', 'P', 'V' options
+        switch (opt) {
+            case '4':
+                socket_type = AF_INET;
+                break;
+            case '6':
+                socket_type = AF_INET6;
+                break;
+            case 'a':
+                use_auth = true;
+                break;
+            case 'c':
+                community_name = optarg;
+                break;
+            case 'h':
+            case '?':
+                show_usage();
+            case 'm':
+                e = NULL;
+                max_connections = strtol(optarg, &e, 10);
+                break;
+            case 'p':
+                e = NULL;
+                use_udp = true;
+                port = strtol(optarg, &e, 10);
+                break;
+            case 'P':
+                e = NULL;
+                use_udp = false;
+                port = strtol(optarg, &e, 10);
+                break;
+            case 's':
+                use_syslog = true;
+                break;
+            case 'v':
+                show_version();
+            case 'V':
+                e = NULL;
+                use_udp = false;
+                snmp_version = strtol(optarg, &e, 10);
+                break;
+            case 'x':
+                if (!parse_handlers_paths(optarg)) return -1;
+                break;
+            default:
+                show_unrecognized_option(opt);
+        }
     }
-
-
-    mib_free();
 
     return 0;
 }
+
+int main(int argc, char **argv) {
+    if (parse_args(argc, argv)) {
+        fprintf(stderr, "Failed to parse command line arguments: %s", strerror(errno));
+        return EXIT_FAILURE;
+    }
+
+    if (log_init()) {
+        fprintf(stderr, "Failed to initialize logging: %s", strerror(errno));
+        return EXIT_FAILURE;
+    }
+
+    log_info("Application started: %s", "OK");
+
+    log_release();
+
+    return EXIT_SUCCESS;
+}
+

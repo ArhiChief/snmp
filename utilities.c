@@ -54,7 +54,7 @@ static char *value_to_string(const asn1_node_t *node) {
     int res;
     oid_t oid;
 
-    if (ber_is_constructed_type(node->type)) {
+    if (is_constructed_type(node->type)) {
         snprintf(str, 100 * sizeof(char), "{ 'full_size': %zu, 'intems_num': %zu", node->full_size, node->content.c.items_num);
     } else {
         switch (node->type) {
@@ -93,7 +93,7 @@ void print_asn1_tree(const asn1_node_t *root, size_t spaces, const char *prefix)
     puts(line);
     free(val);
 
-    if (ber_is_constructed_type(root->type)) {
+    if (is_constructed_type(root->type)) {
         char pref[10];
 
         for (i = 0; i < root->content.c.items_num; i++) {

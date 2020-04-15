@@ -21,7 +21,7 @@
 #include <memory.h>
 
 #include "ber.h"
-#include "utilities.h"
+#include "../utilities.h"
 
 typedef struct encoding_data {
     uint8_t *buffer;
@@ -49,7 +49,7 @@ static int encode_node(void *user_data, asn1_node_t *node) {
         return -1;
     shift += (size_t)bytes_wrote;
 
-    if (!ber_is_constructed_type(node->type)) {
+    if (!is_constructed_type(node->type)) {
         memmove(buf + shift, node->content.p.data, node->content.p.size);
         shift += node->content.p.size;
     }
@@ -68,7 +68,7 @@ static size_t calc_full_sizes(asn1_node_t *node) {
     size_t i;
     size_t full_size = 0;
 
-    if (ber_is_constructed_type(node->type)) {
+    if (is_constructed_type(node->type)) {
         for (i = 0; i < node->content.c.items_num; i++) {
             full_size += calc_full_sizes(node->content.c.items[i]);
         }
@@ -107,7 +107,7 @@ ssize_t ber_decode_asn1_tree(const uint8_t *data, size_t data_size, asn1_node_t 
     tmp_data += bytes_read;
     root->full_size = 1 + bytes_read + content_size; // +1 byte for TAG
 
-    if (ber_is_constructed_type(root->type)) {
+    if (is_constructed_type(root->type)) {
         elems = root->content.c.items;
         while (content_size > 0) {
             elems = realloc(elems, (root->content.c.items_num + 1) * sizeof(*elems));

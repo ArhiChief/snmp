@@ -20,7 +20,7 @@
 #include <errno.h>
 
 #include "processor.h"
-#include "ber.h"
+#include "ber/ber.h"
 #include "mib.h"
 #include "utilities.h"
 #include "asn1/asn1.h"
@@ -74,7 +74,7 @@ static bool check_non_trap_request(const asn1_node_t *pdu) {
             // varbind must be SEQUENCE with 2 primitive elements and first element must be OID
             if (OBJECT_TYPE_SEQUENCE != varbind->type || 2 != varbind->content.c.items_num ||
                 OBJECT_TYPE_OID != varbind->content.c.items[0]->type ||
-                ber_is_constructed_type(varbind->content.c.items[1]->type)) {
+                is_constructed_type(varbind->content.c.items[1]->type)) {
                 return false;
             }
         }

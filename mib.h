@@ -20,7 +20,7 @@
 #define SNMP_SNMP_MIB_H
 
 #include <stdlib.h>
-#include "ber.h"
+#include "ber/ber.h"
 
 typedef int (*mib_getter_t)(void **value, size_t *size, bool *is_allocated);
 typedef int (*mib_setter_t)(const void *res, size_t size);

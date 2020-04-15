@@ -21,7 +21,7 @@
 #include <string.h>
 
 #include "asn1.h"
-#include "../ber.h"
+#include "../ber/ber.h"
 
 asn1_node_t *create_asn1_node(asn1_node_t *root, int type, const void *data, size_t size, bool is_allocated) {
     asn1_node_t *result;
@@ -33,7 +33,7 @@ asn1_node_t *create_asn1_node(asn1_node_t *root, int type, const void *data, siz
     }
 
     if (NULL != root) {
-        if (ber_is_constructed_type(root->type)) {
+        if (is_constructed_type(root->type)) {
             items = realloc(root->content.c.items, (root->content.c.items_num + 1) * sizeof(*root->content.c.items));
 
             if (NULL == items) {
@@ -49,7 +49,7 @@ asn1_node_t *create_asn1_node(asn1_node_t *root, int type, const void *data, siz
         }
     }
 
-    if (!ber_is_constructed_type(type)) {
+    if (!is_constructed_type(type)) {
         result->content.p.size = size;
         result->content.p.data = data;
         result->content.p.is_allocated = is_allocated;
@@ -68,7 +68,7 @@ fail:
 int add_asn1_node(asn1_node_t *root, asn1_node_t *node) {
     asn1_node_t **items;
 
-    if (NULL == root || !ber_is_constructed_type(root->type) || NULL == node) {
+    if (NULL == root || !is_constructed_type(root->type) || NULL == node) {
         errno = EINVAL;
         return -1;
     }
@@ -92,7 +92,7 @@ asn1_node_t *copy_primitive_asn1_node(const asn1_node_t *base) {
     asn1_node_t *result;
     size_t data_size = base->content.p.size;
 
-    if (ber_is_constructed_type(base->type)){
+    if (is_constructed_type(base->type)){
         errno = EINVAL;
         return NULL;
     }
@@ -124,13 +124,12 @@ int traverse_asn1_tree(asn1_node_t *root, void *user_data, asn1_tree_traverse_cl
 
     if (0 != (res = clbk(user_data, root))) return res;
 
-    if (ber_is_constructed_type(root->type)) {
+    if (is_constructed_type(root->type)) {
         for (i = 0; i < root->content.c.items_num; ++i) {
             node = root->content.c.items[i];
             if (0 != (res = traverse_asn1_tree(node, user_data, clbk))) return res;
         }
     }
-
 
     return 0;
 }
@@ -139,7 +138,7 @@ void release_asn1_tree(asn1_node_t *root) {
     size_t i;
     asn1_node_t *node;
 
-    if (ber_is_constructed_type(root->type)) {
+    if (is_constructed_type(root->type)) {
         for (i = 0; i < root->content.c.items_num; ++i) {
             node = root->content.c.items[i];
             release_asn1_tree(node);

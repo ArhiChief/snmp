@@ -1,5 +1,7 @@
 /*
- * utilities.c
+ * program_config.h
+ * Defines getters to global program configuration variables
+ *
  * Copyright (c) 2020 Sergei Kosivchenko <archichief@gmail.com>
  *
  * smart-snmp is free software: you can redistribute it and/or modify it
@@ -16,14 +18,28 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SNMP_UTILITIES_H
-#define SNMP_UTILITIES_H
+#ifndef SNMP_PROGAM_CONFIG_H
+#define SNMP_PROGAM_CONFIG_H
 
-#include "ber/ber.h"
+#include <stdbool.h>
 
-void print_asn1_tree(const asn1_node_t *root, size_t spaces, const char *prefix);
+typedef enum {
+    V1 = 0x1,
+    V2C = 0x1 << 1,
+    V3 = 0x1 << 2
+} snmp_version_t;
 
-void string_to_oid(const char *val, oid_t *res);
-char *oid_to_string(const oid_t *oid);
+const char *g_program_name();
+int g_socket_type();
+bool g_use_auth();
+const char *g_community_name();
+int g_max_connections();
+bool g_use_udp();
+bool g_use_tcp();
+int g_port();
+bool g_use_syslog();
+snmp_version_t g_snmp_version();
+char * const *g_handler_paths();
 
-#endif //SNMP_UTILITIES_H
+
+#endif //SNMP_PROGAM_CONFIG_H
