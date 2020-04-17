@@ -17,7 +17,6 @@
  */
 
 #include <stdlib.h>
-#include <stdlib.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,6 +26,7 @@
 
 #include "progam_config.h"
 #include "log/log.h"
+#include "net/net.h"
 
 /* global program parameters and their getters */
 static const char *program_name = "smart-snmp";
@@ -44,11 +44,7 @@ const char *g_community_name() { return community_name; }
 static int max_connections;
 int g_max_connections() { return max_connections; }
 
-static bool use_udp = true;
-bool g_use_udp() { return use_udp; }
-bool g_use_tcp() { return !use_udp; }
-
-static int port = 161;
+static int port = 10161;
 int g_port() { return port; }
 
 static bool use_syslog;
@@ -77,10 +73,8 @@ _Noreturn static void show_usage() {
                         "\t\tShow summary of command line options and exit\n"
                         "\t-m, --max-connections NUMBER\n"
                         "\t\tAmount of connections concurrently handled by program, default is 10\n"
-                        "\t-p, --udp-port PORT\n"
-                        "\t\tUDP port to listen to for incoming connections, default is 161\n"
-                        "\t-P, --tcp-port PORT\n"
-                        "\t\tTCP port to listen to for incoming connections, default is 161\n"
+                        "\t-p, --port PORT\n"
+                        "\t\tPort to listen to for incoming connections, default is 161\n"
                         "\t-s, --syslog\n"
                         "\t\tUse syslog for logging\n"
                         "\t-v, --version\n"
@@ -158,8 +152,7 @@ static int parse_args(int argc, char **argv) {
             {"community", required_argument, NULL, 'c'},
             {"help", no_argument, NULL, 'h'},
             {"max-connections", required_argument, NULL, 'm'},
-            {"udp-port", required_argument, NULL, 'p'},
-            {"tcp-port", required_argument, NULL, 'P'},
+            {"port", required_argument, NULL, 'p'},
             {"syslog", no_argument, NULL, 's'},
             {"version", no_argument, NULL, 'v'},
             {"snmp-version", required_argument, NULL, 'V'},
@@ -196,12 +189,6 @@ static int parse_args(int argc, char **argv) {
                 break;
             case 'p':
                 e = NULL;
-                use_udp = true;
-                port = strtol(optarg, &e, 10);
-                break;
-            case 'P':
-                e = NULL;
-                use_udp = false;
                 port = strtol(optarg, &e, 10);
                 break;
             case 's':
@@ -211,7 +198,6 @@ static int parse_args(int argc, char **argv) {
                 show_version();
             case 'V':
                 e = NULL;
-                use_udp = false;
                 snmp_version = strtol(optarg, &e, 10);
                 break;
             case 'x':
@@ -237,6 +223,14 @@ int main(int argc, char **argv) {
     }
 
     log_info("Application started: %s", "OK");
+
+    if (network_init()) {
+        return EXIT_FAILURE;
+    }
+
+    bool stop = false;
+
+    network_listen(&stop);
 
     log_release();
 

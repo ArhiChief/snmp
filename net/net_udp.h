@@ -1,6 +1,6 @@
 /*
- * program_config.h
- * Defines getters to global program configuration variables
+ * net_tcp.h
+ * Defines routines to work with UDP connections
  *
  * Copyright (c) 2020 Sergei Kosivchenko <archichief@gmail.com>
  *
@@ -17,27 +17,12 @@
  * You should have received a copy of the GNU General Public License along
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+#ifndef SNMP_NET_UDP_H
+#define SNMP_NET_UDP_H
 
-#ifndef SNMP_PROGAM_CONFIG_H
-#define SNMP_PROGAM_CONFIG_H
+#include <netinet/in.h>
 
-#include <stdbool.h>
+int init_udp(const struct sockaddr *sockaddr, socklen_t socklen, int domain);
+int release_udp();
 
-typedef enum {
-    V1 = 0x1,
-    V2C = 0x1 << 1,
-    V3 = 0x1 << 2
-} snmp_version_t;
-
-const char *g_program_name();
-int g_socket_type();
-bool g_use_auth();
-const char *g_community_name();
-int g_max_connections();
-int g_port();
-bool g_use_syslog();
-snmp_version_t g_snmp_version();
-char * const *g_handler_paths();
-
-
-#endif //SNMP_PROGAM_CONFIG_H
+#endif //SNMP_NET_UDP_H

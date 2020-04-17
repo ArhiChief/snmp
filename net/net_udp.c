@@ -1,7 +1,5 @@
 /*
- * program_config.h
- * Defines getters to global program configuration variables
- *
+ * net_udp.c
  * Copyright (c) 2020 Sergei Kosivchenko <archichief@gmail.com>
  *
  * smart-snmp is free software: you can redistribute it and/or modify it
@@ -18,26 +16,39 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SNMP_PROGAM_CONFIG_H
-#define SNMP_PROGAM_CONFIG_H
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
 
-#include <stdbool.h>
+#include "net_udp.h"
+#include "../log/log.h"
+#include "../progam_config.h"
 
-typedef enum {
-    V1 = 0x1,
-    V2C = 0x1 << 1,
-    V3 = 0x1 << 2
-} snmp_version_t;
+static int sock_fd = -1;
 
-const char *g_program_name();
-int g_socket_type();
-bool g_use_auth();
-const char *g_community_name();
-int g_max_connections();
-int g_port();
-bool g_use_syslog();
-snmp_version_t g_snmp_version();
-char * const *g_handler_paths();
+int init_udp(const struct sockaddr *sockaddr, socklen_t socklen, int domain) {
+    sock_fd = socket(domain, SOCK_DGRAM, 0);
+    if (-1 == sock_fd) {
+        log_crit("Failed to open UDP socket: %s", strerror(errno));
+        return -1;
+    }
 
+    if (-1 == bind(sock_fd, sockaddr, socklen)) {
+        log_crit("Failed to bind UDP socket to port: %s", strerror(errno));
+        goto err;
+    }
 
-#endif //SNMP_PROGAM_CONFIG_H
+    return sock_fd;
+
+err:
+    close(sock_fd);
+    return -1;
+}
+
+int release_upd() {
+    if (-1 != sock_fd) {
+        close(sock_fd);
+    }
+
+    return 0;
+}
