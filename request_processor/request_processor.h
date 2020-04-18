@@ -1,7 +1,5 @@
 /*
- * net_tcp.h
- * Defines routines to work with TCP connections
- *
+ * request_processor.c
  * Copyright (c) 2020 Sergei Kosivchenko <archichief@gmail.com>
  *
  * smart-snmp is free software: you can redistribute it and/or modify it
@@ -18,25 +16,16 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SNMP_NET_TCP_H
-#define SNMP_NET_TCP_H
+#ifndef SNMP_REQUEST_PROCESSOR_H
+#define SNMP_REQUEST_PROCESSOR_H
 
-#include <netinet/in.h>
+#endif //SNMP_REQUEST_PROCESSOR_H
 
-typedef struct {
-    int fd;
-    union {
-        struct sockaddr_in sa;
-        struct sockaddr_in6 sa6;
-    } addr;
-} tcp_clien_t;
+#include <stdlib.h>
+#include <stdint.h>
 
-int init_tcp(const struct sockaddr *sockaddr, socklen_t socklen, int domain);
-tcp_clien_t *accept_tcp_connection();
-ssize_t read_tcp(tcp_clien_t *client, uint8_t **buffer);
+typedef ssize_t (*read_data_t)(void *client, uint8_t **buffer);
+typedef ssize_t (*write_data_t)(void *client, uint8_t **buffer, size_t buf_siz);
+typedef int (*release_client_t)(void *client);
 
-int release_tcp();
-
-
-
-#endif //SNMP_NET_TCP_H
+int process_request(void *client, read_data_t read, write_data_t write, release_client_t release);

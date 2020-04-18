@@ -26,6 +26,7 @@
 #include "net_udp.h"
 #include "net_tcp.h"
 #include "../log/log.h"
+#include "../request_processor/request_processor.h"
 
 static int sock_fd_udp;
 static int sock_fd_tcp;
@@ -83,6 +84,11 @@ int network_listen(const bool *stop) {
             {.fd = sock_fd_tcp, .events = POLLIN, .revents = 0}
     };
 
+    void *client = NULL;
+    read_data_t read_fucn = NULL;
+    write_data_t write_func = NULL;
+    release_client_t release_func = NULL;
+
     while (!*stop) {
         log_debug("Start polling");
         poll_ret = poll(pollfds, POLL_TOTAL, POLL_TIMEOUT);
@@ -115,10 +121,18 @@ int network_listen(const bool *stop) {
         }
 
         if (pollfds[POLL_UDP].revents & POLLIN) {
-
+            pollfds[POLL_UDP].revents = 0;
         } else if (pollfds[POLL_TCP].revents & POLLIN) {
-
+            pollfds[POLL_TCP].revents = 0;
+            client = accept_tcp_connection();
         }
+
+        if (NULL == client) {
+            // client pool is empty.
+            continue;
+        }
+
+        process_request(client, read_fucn, write_func, release_func);
     }
 
     log_info("Waiting for incoming connections finished.");
