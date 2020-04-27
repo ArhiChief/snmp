@@ -19,13 +19,13 @@
 #ifndef SNMP_REQUEST_PROCESSOR_H
 #define SNMP_REQUEST_PROCESSOR_H
 
-#endif //SNMP_REQUEST_PROCESSOR_H
-
 #include <stdlib.h>
 #include <stdint.h>
 
-typedef ssize_t (*read_data_t)(void *client, uint8_t **buffer);
-typedef ssize_t (*write_data_t)(void *client, uint8_t **buffer, size_t buf_siz);
-typedef int (*release_client_t)(void *client);
+typedef ssize_t (*read_func_t)(const void *client, uint8_t **buffer);
+typedef ssize_t (*write_func_t)(const void *client, const uint8_t *buffer, size_t buf_siz);
+typedef int (*release_func_t)(void *client);
 
-int process_request(void *client, read_data_t read, write_data_t write, release_client_t release);
+int queue_request_process(void *client, read_func_t read_func, write_func_t write_func, release_func_t release_func);
+
+#endif //SNMP_REQUEST_PROCESSOR_H

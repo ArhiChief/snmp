@@ -50,8 +50,8 @@ int g_port() { return port; }
 static bool use_syslog;
 bool g_use_syslog() { return use_syslog; }
 
-static snmp_version_t snmp_version = V2C;
-snmp_version_t g_snmp_version() { return snmp_version; }
+static supported_snmp_version_t snmp_version = SNMP_V1 | SNMP_V2C | SNMP_V3;
+supported_snmp_version_t g_snmp_version() { return snmp_version; }
 
 static char **handler_paths = NULL;
 char * const *g_handler_paths() { return handler_paths; }

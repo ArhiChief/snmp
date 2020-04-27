@@ -94,7 +94,7 @@ tcp_clien_t *accept_tcp_connection() {
 
 #define READ_LENGTH 512
 
-ssize_t read_tcp(tcp_clien_t *client, uint8_t **buffer) {
+ssize_t read_tcp(const tcp_clien_t *client, uint8_t **buffer) {
     size_t shift = 0, siz = 0;
     ssize_t br;
     uint8_t *tmp;
@@ -129,15 +129,24 @@ ssize_t read_tcp(tcp_clien_t *client, uint8_t **buffer) {
             log_warn("Failed to set buffer capacity to amount of read bytes: %s", strerror(errno));
         }
         *buffer = tmp;
+        siz = shift;
     }
 
     return siz;
 
 err:
     free(*buffer);
-    close (client->fd);
-    client->fd = -1;
     return -1;
+}
+
+ssize_t write_tcp(const tcp_clien_t *client, const uint8_t *buffer, size_t buf_siz) {
+    write(client->fd, buffer, buf_siz);
+    return 0;
+}
+
+int release_tcp_client(tcp_clien_t *client) {
+    close(client->fd);
+    return 0;
 }
 
 int release_tcp() {

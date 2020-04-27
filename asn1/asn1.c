@@ -142,7 +142,6 @@ void release_asn1_tree(asn1_node_t *root) {
         for (i = 0; i < root->content.c.items_num; ++i) {
             node = root->content.c.items[i];
             release_asn1_tree(node);
-
             free(node);
         }
 

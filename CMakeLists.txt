@@ -14,6 +14,20 @@ add_executable(snmp
         processor.c
         processor.h
         asn1/asn1.c
-        asn1/asn1.h progam_config.h log/log.c log/log.h net/net.c net/net.h net/net_tcp.c net/net_tcp.h net/net_udp.c net/net_udp.h request_processor/request_processor.c request_processor/request_processor.h request_processor/snmp_v1_processor.c request_processor/snmp_v1_processor.h)
+        asn1/asn1.h
+        progam_config.h
+        log/log.c
+        log/log.h
+        net/net.c
+        net/net.h
+        net/net_tcp.c
+        net/net_tcp.h
+        net/net_udp.c
+        net/net_udp.h
+        request_processor/request_processor.c
+        request_processor/request_processor.h
+        request_processor/snmp_v1.c
+        request_processor/snmp_v1.h
+        )
 
 target_compile_options(snmp PRIVATE -Wall -Wextra -pedantic -Werror)

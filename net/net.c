@@ -85,9 +85,9 @@ int network_listen(const bool *stop) {
     };
 
     void *client = NULL;
-    read_data_t read_fucn = NULL;
-    write_data_t write_func = NULL;
-    release_client_t release_func = NULL;
+    read_func_t read_fucn = NULL;
+    write_func_t write_func = NULL;
+    release_func_t release_func = NULL;
 
     while (!*stop) {
         log_debug("Start polling");
@@ -125,6 +125,9 @@ int network_listen(const bool *stop) {
         } else if (pollfds[POLL_TCP].revents & POLLIN) {
             pollfds[POLL_TCP].revents = 0;
             client = accept_tcp_connection();
+            read_fucn = (read_func_t)read_tcp;
+            write_func = (write_func_t)write_tcp;
+            release_func = (release_func_t)release_tcp_client;
         }
 
         if (NULL == client) {
@@ -132,7 +135,7 @@ int network_listen(const bool *stop) {
             continue;
         }
 
-        process_request(client, read_fucn, write_func, release_func);
+        queue_request_process(client, read_fucn, write_func, release_func);
     }
 
     log_info("Waiting for incoming connections finished.");

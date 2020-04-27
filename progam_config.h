@@ -24,10 +24,10 @@
 #include <stdbool.h>
 
 typedef enum {
-    V1 = 0x1,
-    V2C = 0x1 << 1,
-    V3 = 0x1 << 2
-} snmp_version_t;
+    SNMP_V1 = 0x1,
+    SNMP_V2C = 0x1 << 1,
+    SNMP_V3 = 0x1 << 2
+} supported_snmp_version_t;
 
 const char *g_program_name();
 int g_socket_type();
@@ -36,7 +36,7 @@ const char *g_community_name();
 int g_max_connections();
 int g_port();
 bool g_use_syslog();
-snmp_version_t g_snmp_version();
+supported_snmp_version_t g_snmp_version();
 char * const *g_handler_paths();
 
 
